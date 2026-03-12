@@ -1,0 +1,254 @@
+---
+title: "Human Infrastructure and Environmental Disturbance in Antarctica"
+author: "Shenshen Zhou"
+date: today
+format:
+  dashboard:
+    theme: flatly
+    orientation: columns
+    embed-resources: true
+---
+
+# Introduction
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(sf)
+library(plotly)
+
+sf_use_s2(FALSE)
+disturbance_sf <- st_read(
+  "AAS_5134_Antarctic_Disturbance_Footprint/Disturbance_footprint.shp"
+)
+stations_df <- read.csv("SCAR_CGA_PLACE_NAMES_SIMPLIFIED.csv")
+```
+
+## Project Overview
+
+**Project Overview:**
+
+Antarctica is governed under the Antarctic Treaty System, which emphasizes environmental protection while permitting peaceful scientific research activities. As human presence in Antarctica has expanded through the establishment of permanent and seasonal research stations, concerns have emerged about the cumulative environmental impact of infrastructure development in this highly fragile ecosystem. The Antarctic Treaty Secretariat outlines environmental protection as a core principle of governance, highlighting the importance of monitoring human activities in the region.
+
+This project investigates the relationship between research station infrastructure and mapped environmental disturbance footprints across Antarctica. As scientific activity increases, it becomes critical to evaluate whether research presence corresponds to measurable physical disturbance on the landscape. Understanding this relationship helps inform discussions about sustainable research practices in extreme environments.
+
+The analysis centers around three big-picture questions:
+
+**Big Question 1: Are Antarctic research stations spatially associated with mapped human disturbance footprints?**
+
+**Big Question 2: Which countries operate the highest number of Antarctic research stations?**
+
+**Big Question 3: Do countries with more research stations correspond to greater mapped disturbance areas?**
+
+To address these questions, this project combines two publicly available datasets. The first dataset contains mapped disturbance footprint polygons representing areas of documented human infrastructure impact in Antarctica. The second dataset contains research station locations and national affiliations. The disturbance footprint dataset was accessed through the AAS_5134 Antarctic Disturbance dataset, and the station dataset originates from the SCAR Composite Gazetteer of Antarctica (CGA): <https://data.aad.gov.au/>and <https://www.scar.org/>.
+
+This analysis is important because Antarctica represents one of the last largely undeveloped regions on Earth. Evaluating whether research infrastructure correlates with disturbance patterns can contribute to broader conversations about environmental stewardship, policy design, and sustainable scientific operations in protected territories.
+
+There are also ethical and methodological limitations to consider. The disturbance dataset captures mapped infrastructure footprints but may not account for indirect or temporary impacts. Additionally, spatial overlap does not necessarily imply causation. Station presence and disturbance may correlate without representing direct environmental degradation. Finally, datasets compiled from different sources may vary in accuracy, update frequency, or completeness.
+
+## Data Context
+
+**Data Context:**
+
+This analysis integrates two spatial datasets that together allow examination of research infrastructure and environmental disturbance in Antarctica.
+
+**Dataset 1: Antarctic Disturbance Footprint**
+
+The disturbance footprint dataset represents mapped polygons of documented human infrastructure impacts across Antarctica. This dataset is publicly available through the Australian Antarctic Data Centre (AADC) and related Antarctic research data portals (<https://data.aad.gov.au/>. The dataset was created and maintained by Antarctic research and environmental monitoring organizations to track infrastructure footprints.
+
+The sample consists of mapped spatial polygons representing areas of disturbance such as station facilities, operational zones, and infrastructure developments. Each polygon includes spatial geometry and associated attributes such as area measurements. The dataset includes several thousand mapped disturbance features across Antarctic territory.
+
+The data were recorded using spatial mapping methods and satellite-supported geospatial analysis. These records represent documented physical footprint areas rather than ecological impact measurements. The geographic scope includes coastal and inland station zones across Antarctica. A strength of this dataset is that it provides standardized geospatial boundaries of infrastructure. A limitation is that it may not capture smaller-scale or temporary disturbances.
+
+**Dataset 2: SCAR Composite Gazetteer of Antarctica (CGA)**
+
+The station dataset originates from the Scientific Committee on Antarctic Research (SCAR) Composite Gazetteer of Antarctica (CGA): <https://www.scar.org/>. The CGA compiles officially recognized Antarctic place names, including research stations and facilities operated by different nations.
+
+The dataset includes location coordinates, feature types, and national affiliations. For this project, records categorized as research stations were filtered and converted into spatial point features. The sample includes hundreds of named locations across Antarctic territory.
+
+The data were compiled from official national Antarctic programs and geographic naming authorities. Each entry represents a recorded geographic feature, including stations and operational facilities. While the CGA provides comprehensive naming and location information, it does not include direct measures of environmental impact or operational scale. Therefore, spatial association analysis is required to explore possible relationships between stations and disturbance footprints.
+
+# Question 1: Spatial Association Between Stations and Disturbance
+
+This section investigates whether Antarctic research stations are spatially associated with mapped human disturbance footprints. If research stations frequently overlap with disturbance polygons, this may indicate that infrastructure development corresponds to measurable environmental footprint areas.
+
+To examine this relationship, station point locations are converted into spatial features and joined with disturbance polygons using a spatial intersection operation. This allows identification of stations that fall within mapped disturbance areas.
+
+```{r}
+stations_sf <- stations_df %>%
+  filter(feature_type_name == "Station") %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+stations_with_disturbance <- st_join(
+  stations_sf,
+  disturbance_sf,
+  join = st_intersects
+)
+```
+
+```{r}
+stations_with_disturbance <- stations_with_disturbance %>%
+  mutate(
+    disturbance_present = if_else(is.na(SHAPE_Area), "No", "Yes")
+  )
+```
+
+```{r}
+disturbance_summary <- stations_with_disturbance %>%
+  group_by(disturbance_present) %>%
+  summarize(count = n())
+```
+
+```{r}
+ggplot(disturbance_summary,
+       aes(x = disturbance_present,
+           y = count,
+           fill = disturbance_present)) +
+  geom_col() +
+  labs(
+    title = "Research Stations with and without Disturbance Overlap",
+    x = "Disturbance Present",
+    y = "Number of Stations"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = disturbance_sf, fill = "grey90", color = NA) +
+  geom_sf(data = stations_sf,
+          aes(color = country_name),
+          size = 1) +
+  labs(
+    title = "Spatial Distribution of Antarctic Stations and Disturbance",
+    color = "Country"
+  ) +
+  theme_minimal()
+```
+
+The bar chart indicates the number of stations that spatially intersect mapped disturbance areas. A high proportion of overlap suggests that infrastructure development is concentrated within previously disturbed zones. However, this does not imply direct environmental degradation, as disturbance polygons represent mapped infrastructure footprints rather than ecological impact measurements.
+
+The spatial map further illustrates clustering patterns. Stations appear concentrated along coastal regions, where disturbance footprints are also more prevalent. This spatial co-location suggests a structural relationship between infrastructure development and mapped disturbance areas.
+
+# Question 2: National Distribution of Antarctic Research Stations
+
+This section examines which countries operate the highest number of Antarctic research stations. National presence in Antarctica reflects geopolitical interest, scientific investment, and logistical capacity. By analyzing the distribution of stations by country, we can better understand patterns of international activity in the region.
+
+```{r}
+country_counts <- stations_df %>%
+  filter(feature_type_name == "Station") %>%
+  group_by(country_name) %>%
+  summarize(station_count = n()) %>%
+  arrange(desc(station_count))
+```
+
+```{r}
+top10_countries <- country_counts %>%
+  slice(1:10)
+```
+
+```{r}
+ggplot(top10_countries,
+       aes(x = reorder(country_name, station_count),
+           y = station_count,
+           fill = station_count)) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Top 10 Countries by Number of Antarctic Research Stations",
+    x = "Country",
+    y = "Number of Stations",
+    fill = "Station Count"
+  ) +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  theme_minimal()
+```
+
+The visualization shows clear differences in national research presence. A small number of countries operate a disproportionately large number of stations, while many others maintain only limited infrastructure. This concentration reflects differences in national funding capacity, logistical support systems, and long-term scientific commitments to Antarctic research.
+
+The skewed distribution suggests that disturbance patterns may also vary by country, motivating further investigation into whether greater infrastructure presence corresponds to larger mapped disturbance areas.
+
+# Question 3: Do countries with more research stations correspond to greater mapped disturbance areas?
+
+This section explores whether countries that operate more Antarctic research stations also correspond to greater mapped disturbance areas. If a country maintains a larger infrastructure presence, it may contribute to larger physical disturbance footprints through station facilities, logistics areas, and supporting infrastructure. To examine this relationship, disturbance polygons are associated with nearby research stations using spatial intersection. Then the disturbance areas are aggregated by country to estimate the total mapped disturbance footprint connected to each nation's stations.
+
+```{r}
+stations_disturbance <- st_join(
+  stations_sf,
+  disturbance_sf,
+  join = st_intersects
+)
+
+country_station_counts <- stations_sf %>%
+  st_drop_geometry() %>%
+  group_by(country_name) %>%
+  summarize(total_stations = n())
+
+country_disturbance <- stations_disturbance %>%
+  st_drop_geometry() %>%
+  filter(!is.na(SHAPE_Area)) %>%
+  group_by(country_name) %>%
+  summarize(total_disturbance_area = sum(SHAPE_Area, na.rm = TRUE))
+
+country_combined <- left_join(
+  country_station_counts,
+  country_disturbance,
+  by = "country_name"
+) %>%
+  mutate(
+    total_disturbance_area =
+      if_else(is.na(total_disturbance_area), 0, total_disturbance_area)
+  )
+```
+
+```{r}
+ggplot(country_combined,
+       aes(x = total_stations,
+           y = total_disturbance_area,
+           label = country_name)) +
+  geom_point(color = "darkred", size = 3) +
+  geom_smooth(method = "lm", se = FALSE, color = "steelblue") +
+  geom_text(nudge_y = 0.02) +
+  labs(
+    title = "Station Count vs Disturbance Area by Country",
+    x = "Total Number of Stations",
+    y = "Total Disturbance Area"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+correlation_value <- cor(
+  country_combined$total_stations,
+  country_combined$total_disturbance_area
+)
+```
+
+The scatterplot suggests a positive association between the number of research stations operated by a country and the total mapped disturbance area linked to those stations. Countries with a larger station presence, such as the United States and Russia, appear to correspond to greater mapped disturbance footprints.
+
+To quantify this relationship, a correlation coefficient was calculated. The resulting value of 0.71 indicates a moderately strong positive linear relationship between station count and disturbance area. This suggests that countries maintaining more stations tend to be associated with larger mapped disturbance areas.
+
+However, this relationship should be interpreted cautiously. The disturbance polygons represent mapped infrastructure footprints, not necessarily the full environmental impact of national activity. Additionally, spatial overlap or shared logistics zones may inflate area totals for some countries. While the correlation is substantial, it does not imply causation, and further spatial or temporal analysis would be necessary to determine whether increased station presence directly leads to greater environmental disturbance.
+
+A fitted linear regression line is added to the visualization to illustrate the overall trend. The upward slope of the line reinforces the positive association indicated by the correlation coefficient.
+
+# Conclusion
+
+This project explored the relationship between human research infrastructure and mapped environmental disturbance in Antarctica. Across the three questions, several important patterns emerged.
+
+First, the spatial analysis suggests that disturbance footprints are not randomly distributed across Antarctica. Research stations tend to cluster in specific coastal regions, and many disturbance polygons are located near these infrastructure sites. This spatial overlap indicates that human presence is closely connected to mapped disturbance areas, even if the intensity of impact varies by location.
+
+Second, when examining patterns at the national level, we observed differences in how countries operate in Antarctica. Some nations maintain many stations but relatively small disturbance footprints, while others show larger mapped disturbance areas. The correlation coefficient of approximately 0.71 indicates a moderately strong positive relationship between the number of stations and total disturbance area. However, this does not imply direct causation. The mapped polygons represent physical infrastructure footprints, not the full ecological impact of each country’s activities.
+
+Finally, this analysis highlights both the value and the limitations of spatial datasets. While the data allow us to examine patterns at continental and national scales, they may underestimate indirect impacts such as pollution, transportation routes, or cumulative environmental change over time. Future research could incorporate temporal data or projected coordinate systems to improve area accuracy and explore how disturbance has evolved historically.
+
+Overall, the results suggest that human activity in Antarctica leaves measurable spatial traces, and understanding these patterns is important for evaluating environmental governance under the Antarctic Treaty System.
+
+## Tools Used
+
+**Tools Used:**
+
+Basic tools: filter, mutate, summarize, left_join, group_by\
+Intermediate tools: missing data handling with if_else\
+Novel tools: spatial joins (st_join), mapping with ggplot + sf, correlation coefficient
+
+The correlation coefficient was used to quantify the strength of the linear relationship between station count and disturbance area. This provides a more rigorous measure than visual inspection alone.
